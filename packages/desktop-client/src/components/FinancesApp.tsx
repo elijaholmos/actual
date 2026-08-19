@@ -12,6 +12,7 @@ import * as undo from '@actual-app/core/platform/client/undo';
 import { getLatestAppVersion, sync } from '#app/appSlice';
 import { ProtectedRoute } from '#auth/ProtectedRoute';
 import { Permissions } from '#auth/types';
+import { CommandBarProvider } from '#commandbar/index';
 import { useAutomaticBankSync } from '#hooks/useAutomaticBankSync';
 import { useGlobalPref } from '#hooks/useGlobalPref';
 import { useLocalPref } from '#hooks/useLocalPref';
@@ -207,7 +208,7 @@ export function FinancesApp() {
 
   const scrollableRef = useRef<HTMLDivElement>(null);
 
-  return (
+  const app = (
     <TourProvider>
       <View style={{ height: '100%' }}>
         <RouterBehaviors />
@@ -578,4 +579,6 @@ export function FinancesApp() {
       </View>
     </TourProvider>
   );
+
+  return <CommandBarProvider>{app}</CommandBarProvider>;
 }

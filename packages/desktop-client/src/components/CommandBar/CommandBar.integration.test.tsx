@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CommandBarProvider } from '#commandbar/index';
+
 import { CommandBar } from './CommandBar';
 
 const dispatch = vi.fn();
@@ -8,6 +10,14 @@ const mutate = vi.fn();
 const startTour = vi.fn();
 let modalStack: unknown[] = [];
 let open = true;
+
+function renderCommandBar() {
+  return render(
+    <CommandBarProvider>
+      <CommandBar />
+    </CommandBarProvider>,
+  );
+}
 
 vi.mock('#redux', () => ({
   useDispatch: () => dispatch,
@@ -79,7 +89,7 @@ describe('CommandBar integration', () => {
   it('stays closed when Ctrl/Cmd+K is pressed over an active modal', () => {
     open = false;
     modalStack = [{}];
-    render(<CommandBar />);
+    renderCommandBar();
 
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
 
@@ -87,7 +97,7 @@ describe('CommandBar integration', () => {
   });
 
   it('runs sync-and-download when Sync all accounts is selected', () => {
-    render(<CommandBar />);
+    renderCommandBar();
     fireEvent.change(screen.getByRole('combobox'), {
       target: { value: 'Sync all accounts' },
     });
@@ -97,7 +107,7 @@ describe('CommandBar integration', () => {
   });
 
   it('runs the tour handler with the translated command label', () => {
-    render(<CommandBar />);
+    renderCommandBar();
     expect(screen.getByText('Take a tour of Actual')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Take a tour of Actual'));
 
@@ -105,7 +115,7 @@ describe('CommandBar integration', () => {
   });
 
   it('returns from themes on Escape without closing the palette', () => {
-    render(<CommandBar />);
+    renderCommandBar();
     fireEvent.click(screen.getByText('Change theme…'));
     expect(screen.getByTestId('theme-page')).toBeInTheDocument();
 
