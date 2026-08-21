@@ -26,6 +26,7 @@ vi.mock('#redux', () => ({
 }));
 vi.mock('#accounts/mutations', () => ({
   useSyncAndDownloadMutation: () => ({ mutate }),
+  useReopenAccountMutation: () => ({ mutate: vi.fn(), mutateAsync: vi.fn() }),
 }));
 vi.mock('#accounts/useAccountSyncStatus', () => ({
   useAccountSyncStatus: () => () => 'success',
