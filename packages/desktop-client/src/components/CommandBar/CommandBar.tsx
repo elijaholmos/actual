@@ -6,6 +6,7 @@ import { Button } from '@actual-app/components/button';
 import {
   SvgAdd,
   SvgArrowLeft,
+  SvgBookmark,
   SvgClose,
   SvgCog,
   SvgKeyboard,
@@ -44,6 +45,13 @@ import {
 } from '#accounts/mutations';
 import { useAccountSyncStatus } from '#accounts/useAccountSyncStatus';
 import { closeBudget } from '#budgetfiles/budgetfilesSlice';
+import {
+  favoriteRefKey,
+  parseCommandBarFavorites,
+  resolveCommandBarFavorites,
+  updateCommandBarFavorites,
+} from '#commandbar/commandBarFavorites';
+import type { CommandBarFavoriteRef } from '#commandbar/commandBarFavorites';
 import { useCommandBarCommands } from '#commandbar/commandBarRegistry';
 import {
   closeCommandBar,
@@ -58,6 +66,7 @@ import { useTour } from '#components/tour/TourProvider';
 import { useAccounts } from '#hooks/useAccounts';
 import { useDashboardPages } from '#hooks/useDashboardPages';
 import { useGlobalPref } from '#hooks/useGlobalPref';
+import { useLocalPref } from '#hooks/useLocalPref';
 import { useMetadataPref } from '#hooks/useMetadataPref';
 import { useModalState } from '#hooks/useModalState';
 import { useNavigate } from '#hooks/useNavigate';
@@ -107,9 +116,13 @@ import type {
 
 type Page = 'root' | 'themes' | 'account-actions' | 'report-actions';
 
-type ContextualItem =
+type ContextualItemRef =
   | { type: 'account'; id: AccountEntity['id'] }
   | { type: 'report'; id: CustomReportEntity['id'] };
+
+type ContextualItem =
+  | { type: 'account'; item: AccountEntity }
+  | { type: 'report'; item: CustomReportEntity };
 
 type NavigationItem = Readonly<{
   id: string;
@@ -150,6 +163,13 @@ function getNavigationId(id: SidebarMenuItemId) {
   return id === 'reports' ? 'reports-nav' : id;
 }
 
+function contextualFavoriteRef(item: ContextualItem): CommandBarFavoriteRef {
+  return {
+    type: item.type === 'account' ? 'account' : 'report',
+    id: item.item.id,
+  };
+}
+
 export function CommandBar() {
   const { t } = useTranslation();
   const { availableItems: sidebarItems } = useSidebarMenu();
@@ -160,7 +180,7 @@ export function CommandBar() {
   // action transitions into it; esc / backspace-on-empty goes back.
   const [page, setPage] = useState<Page>('root');
   const [contextualItemRef, setContextualItemRef] =
-    useState<ContextualItem | null>(null);
+    useState<ContextualItemRef | null>(null);
   const [selectedValue, setSelectedValue] = useState('');
   const [rootSearch, setRootSearch] = useState('');
   const [rootSelectedValue, setRootSelectedValue] = useState('');
@@ -169,6 +189,9 @@ export function CommandBar() {
   const contributedCommands = useCommandBarCommands();
   const reopenAccount = useReopenAccountMutation();
   const [budgetName] = useMetadataPref('budgetName');
+  const [storedFavorites, setStoredFavorites] = useLocalPref(
+    'commandbar.favorites',
+  );
   const { modalStack } = useModalState();
   const { startTour } = useTour();
   const syncAndDownload = useSyncAndDownloadMutation();
@@ -346,9 +369,51 @@ export function CommandBar() {
   const accounts = allAccounts.filter(acc => !acc.closed);
   const closedAccounts = allAccounts.filter(acc => !!acc.closed);
   const getAccountSyncStatus = useAccountSyncStatus();
+  const favoriteRefs = useMemo(
+    () => parseCommandBarFavorites(storedFavorites),
+    [storedFavorites],
+  );
+  const favoriteKeys = new Set(favoriteRefs.map(favoriteRefKey));
+  const toggleFavorite = useCallback(
+    (ref: CommandBarFavoriteRef) => {
+      const eligibleFavoriteRefs: readonly CommandBarFavoriteRef[] = [
+        ...allAccounts.map(account => ({
+          type: 'account' as const,
+          id: account.id,
+        })),
+        ...customReports.map(report => ({
+          type: 'report' as const,
+          id: report.id,
+        })),
+      ];
+      setStoredFavorites(
+        updateCommandBarFavorites(storedFavorites, eligibleFavoriteRefs, ref),
+      );
+    },
+    [allAccounts, customReports, setStoredFavorites, storedFavorites],
+  );
+  const resolvedFavorites = resolveCommandBarFavorites(
+    favoriteRefs,
+    allAccounts,
+    customReports,
+  );
 
   const getContextualItem = useCallback(
-    (value: string): ContextualItem | null => {
+    (value: string): ContextualItemRef | null => {
+      const favoriteRef = favoriteRefs.find(
+        ref => `favorites:${favoriteRefKey(ref)}` === value,
+      );
+      if (favoriteRef?.type === 'account') {
+        const account = [...accounts, ...closedAccounts].find(
+          item => item.id === favoriteRef.id,
+        );
+        if (account) return { type: 'account', id: account.id };
+      }
+      if (favoriteRef?.type === 'report') {
+        const report = customReports.find(item => item.id === favoriteRef.id);
+        if (report) return { type: 'report', id: report.id };
+      }
+
       const account = [...accounts, ...closedAccounts].find(
         item => `accounts${item.closed ? '-closed' : ''}:${item.id}` === value,
       );
@@ -359,7 +424,7 @@ export function CommandBar() {
       );
       return report ? { type: 'report', id: report.id } : null;
     },
-    [accounts, closedAccounts, customReports],
+    [accounts, closedAccounts, customReports, favoriteRefs],
   );
 
   const openSelectedContextualPage = useCallback(() => {
@@ -564,7 +629,9 @@ export function CommandBar() {
       // Contextual actions always close before they navigate, open a modal, or
       // start a mutation. This also keeps the palette from sitting above the
       // flow it just launched.
-      dispatch(closeCommandBar());
+      if (action.id !== 'favorite') {
+        dispatch(closeCommandBar());
+      }
       void (async () => {
         try {
           await action.run();
@@ -578,6 +645,22 @@ export function CommandBar() {
     },
     [dispatch],
   );
+
+  const contextualFavoriteAction: ActionItem | null =
+    contextualItem == null
+      ? null
+      : (() => {
+          const ref = contextualFavoriteRef(contextualItem);
+          const isFavorite = favoriteKeys.has(favoriteRefKey(ref));
+          return {
+            id: 'favorite',
+            name: isFavorite
+              ? t('Remove from favorites')
+              : t('Add to favorites'),
+            Icon: SvgBookmark,
+            run: () => toggleFavorite(ref),
+          };
+        })();
 
   const contextualHeader: ActionPageHeader | null = contextualItem
     ? contextualItem.type === 'account'
@@ -614,6 +697,7 @@ export function CommandBar() {
             key: 'additional',
             heading: t('Additional'),
             items: [
+              ...(contextualFavoriteAction ? [contextualFavoriteAction] : []),
               contextualItem.item.closed
                 ? {
                     id: 'reopen',
@@ -654,9 +738,15 @@ export function CommandBar() {
                 },
               ],
             },
+            {
+              key: 'additional',
+              heading: t('Additional'),
+              items: contextualFavoriteAction ? [contextualFavoriteAction] : [],
+            },
           ]
         : [];
 
+  const isRootSearchEmpty = search.trim() === '';
   const sections: SearchSection[] = [
     {
       key: 'accounts',
@@ -686,32 +776,42 @@ export function CommandBar() {
           ),
           Icon: SvgLibrary,
         },
-        ...accounts.map(account => ({
-          ...account,
-          content: (
-            <BalanceRow<'account', 'balance'>
-              label={account.name}
-              binding={accountBalance(account.id)}
-              query={search}
-            />
-          ),
-          leading: (
-            <AccountStatusIndicator
-              status={getAccountSyncStatus(account)}
-              size={20}
-            />
-          ),
-        })),
+        ...accounts
+          .filter(
+            account =>
+              !isRootSearchEmpty || !favoriteKeys.has(`account:${account.id}`),
+          )
+          .map(account => ({
+            ...account,
+            content: (
+              <BalanceRow<'account', 'balance'>
+                label={account.name}
+                binding={accountBalance(account.id)}
+                query={search}
+              />
+            ),
+            leading: (
+              <AccountStatusIndicator
+                status={getAccountSyncStatus(account)}
+                size={20}
+              />
+            ),
+          })),
       ],
       onSelect: ({ id }) => handleNavigate(`/accounts/${id}`),
     },
     {
       key: 'accounts-closed',
       heading: t('Closed Accounts'),
-      items: closedAccounts.map(account => ({
-        ...account,
-        Icon: SvgLibrary,
-      })),
+      items: closedAccounts
+        .filter(
+          account =>
+            !isRootSearchEmpty || !favoriteKeys.has(`account:${account.id}`),
+        )
+        .map(account => ({
+          ...account,
+          Icon: SvgLibrary,
+        })),
       onSelect: ({ id }) => handleNavigate(`/accounts/${id}`),
     },
     {
@@ -756,13 +856,53 @@ export function CommandBar() {
     {
       key: 'reports-custom',
       heading: t('Custom Reports'),
-      items: customReports.map(report => ({
-        ...report,
-        Icon: SvgNotesPaperText,
-      })),
+      items: customReports
+        .filter(
+          report =>
+            !isRootSearchEmpty || !favoriteKeys.has(`report:${report.id}`),
+        )
+        .map(report => ({
+          ...report,
+          Icon: SvgNotesPaperText,
+        })),
       onSelect: ({ id }) => handleNavigate(`/reports/custom/${id}`),
     },
   ];
+
+  const favoriteItems = resolvedFavorites.map(({ ref, item }) => {
+    if (ref.type === 'account') {
+      return {
+        id: favoriteRefKey(ref),
+        name: item.name,
+        Icon: SvgLibrary,
+      };
+    }
+
+    return {
+      id: favoriteRefKey(ref),
+      name: item.name,
+      Icon: SvgNotesPaperText,
+    };
+  });
+  const favoriteSection: SearchSection | null =
+    isRootSearchEmpty && favoriteItems.length > 0
+      ? {
+          key: 'favorites',
+          heading: t('Favorites'),
+          items: favoriteItems,
+          onSelect: ({ id }) => {
+            const favorite = resolvedFavorites.find(
+              item => favoriteRefKey(item.ref) === id,
+            );
+            if (!favorite) return;
+            handleNavigate(
+              favorite.ref.type === 'account'
+                ? `/accounts/${favorite.ref.id}`
+                : `/reports/custom/${favorite.ref.id}`,
+            );
+          },
+        }
+      : null;
 
   const searchLower = search.toLowerCase();
   const filteredSections = sections.map(section => ({
@@ -772,6 +912,7 @@ export function CommandBar() {
     ),
   }));
   const hasResults = filteredSections.some(section => !!section.items.length);
+  const hasRootResults = hasResults || favoriteSection != null;
   const isActionPage = page === 'account-actions' || page === 'report-actions';
   const commandListClassName = cx(
     css({
@@ -948,6 +1089,39 @@ export function CommandBar() {
             />
           ) : (
             <>
+              {favoriteSection != null && (
+                <Command.Group
+                  heading={favoriteSection.heading}
+                  className={paletteGroupClassName}
+                >
+                  {favoriteSection.items.map(
+                    ({ id, name, Icon, content, leading }) => (
+                      <Command.Item
+                        key={id}
+                        onSelect={() => favoriteSection.onSelect({ id })}
+                        value={`favorites:${id}`}
+                        aria-label={name}
+                        className={paletteItemClassName}
+                      >
+                        {leading ?? (Icon && <Icon width={15} height={15} />)}
+                        {content || (
+                          <Text
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <Highlight text={name} query={search} />
+                          </Text>
+                        )}
+                      </Command.Item>
+                    ),
+                  )}
+                </Command.Group>
+              )}
               {filteredSections.map(
                 section =>
                   !!section.items.length && (
@@ -991,7 +1165,7 @@ export function CommandBar() {
                   ),
               )}
 
-              {!hasResults && (
+              {!hasRootResults && (
                 <Command.Empty
                   className={css({
                     padding: '28px 0 32px',

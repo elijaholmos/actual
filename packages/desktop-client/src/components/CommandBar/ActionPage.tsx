@@ -120,7 +120,15 @@ function Header({
         </Text>
       </View>
       {header.secondary != null && (
-        <Text style={{ color: 'var(--color-pageTextSubdued)', flexShrink: 0 }}>
+        <Text
+          style={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            color: 'var(--color-pageTextSubdued)',
+          }}
+        >
           {header.secondary}
         </Text>
       )}

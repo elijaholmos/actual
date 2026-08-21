@@ -96,6 +96,15 @@ export type MetadataPrefs = Partial<{
 /**
  * Local preferences applicable to a single device. Stored in local storage.
  */
+export type CommandBarFavoriteRef =
+  | Readonly<{ type: 'account'; id: string }>
+  | Readonly<{ type: 'report'; id: string }>;
+
+export type CommandBarFavoritesPref = Readonly<{
+  version: 1;
+  favorites: readonly CommandBarFavoriteRef[];
+}>;
+
 export type LocalPrefs = Partial<{
   'ui.showClosedAccounts': boolean;
   'sidebar.accountsOpenState': Record<string, boolean>;
@@ -119,6 +128,7 @@ export type LocalPrefs = Partial<{
    * back-to-back sync attempts.
    */
   'bankSync.lastAutomaticRun': number;
+  'commandbar.favorites': CommandBarFavoritesPref;
 }>;
 
 export type Theme = 'light' | 'dark' | 'auto' | 'midnight' | string;
