@@ -18,7 +18,7 @@ import { pushModal } from '#modals/modalsSlice';
 import type * as ModalsSlice from '#modals/modalsSlice';
 
 import { CommandBar } from './CommandBar';
-import { destructiveActionClassName } from './styles';
+import { actionItemClassName, destructiveActionClassName } from './styles';
 
 const mocks = vi.hoisted(() => ({
   send: vi.fn(),
@@ -698,6 +698,21 @@ describe('CommandBar', () => {
 
     expect(execute).toHaveBeenCalledTimes(1);
     expect(store.getState().commandBar.open).toBe(false);
+  });
+
+  it('styles destructive page actions without executing them', () => {
+    const execute = vi.fn();
+    renderOpenCommandBar(
+      <ContributedCommands
+        commands={[
+          { id: 'close', label: 'Close Account', destructive: true, execute },
+        ]}
+      />,
+    );
+
+    const item = screen.getByRole('option', { name: 'Close Account' });
+    expect(item).toHaveClass(actionItemClassName, destructiveActionClassName);
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it('updates and removes contributed commands while the palette is open', async () => {

@@ -88,6 +88,8 @@ import {
 import { ActionPage } from './ActionPage';
 import { BalanceRow, FooterHint, Highlight, KeyChip } from './primitives';
 import {
+  actionItemClassName,
+  destructiveActionClassName,
   dialogEnter,
   overlayEnter,
   pageEnterClassName,
@@ -534,6 +536,7 @@ export function CommandBar() {
           items: contributedCommands.map(command => ({
             id: command.id,
             name: command.label,
+            destructive: command.destructive,
           })),
           onSelect: ({ id }) => {
             const command = contributedCommands.find(
@@ -954,13 +957,17 @@ export function CommandBar() {
                       className={paletteGroupClassName}
                     >
                       {section.items.map(
-                        ({ id, name, Icon, content, leading }) => (
+                        ({ id, name, Icon, content, leading, destructive }) => (
                           <Command.Item
                             key={id}
                             onSelect={() => section.onSelect({ id })}
                             value={`${section.key}:${id}`}
                             aria-label={name}
-                            className={paletteItemClassName}
+                            className={
+                              destructive
+                                ? `${actionItemClassName} ${destructiveActionClassName}`
+                                : paletteItemClassName
+                            }
                           >
                             {leading ??
                               (Icon && <Icon width={15} height={15} />)}
