@@ -1150,11 +1150,7 @@ export function CommandBar() {
       return recentItems.find(item => item.key === id)?.ref ?? null;
     }
     if (section === 'navigation') return { type: 'navigation', id };
-    if (section === 'accounts') {
-      return id === 'onbudget' || id === 'offbudget'
-        ? { type: 'account', id }
-        : { type: 'account', id };
-    }
+    if (section === 'accounts') return { type: 'account', id };
     if (section === 'accounts-closed') return { type: 'account', id };
     if (section === 'reports') return { type: 'dashboard', id };
     if (section === 'reports-custom') return { type: 'report', id };
@@ -1270,10 +1266,7 @@ export function CommandBar() {
                 : t('Off Budget')
               : (item?.name ?? '');
             Icon = SvgLibrary;
-            run = () =>
-              handleNavigate(
-                aggregate ? `/accounts/${ref.id}` : `/accounts/${ref.id}`,
-              );
+            run = () => handleNavigate(`/accounts/${ref.id}`);
           } else if (ref.type === 'dashboard') {
             const item = dashboardPages.find(item => item.id === ref.id);
             name = item?.name ?? '';
