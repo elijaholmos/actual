@@ -317,4 +317,99 @@ test.describe('Command bar', () => {
     ]);
     await expect(recent).toMatchThemeScreenshots();
   });
+
+  async function openMainDashboardActionPage() {
+    const commandBar = await openCommandBar(page);
+    const commandBarInput = commandBar.getByRole('combobox', {
+      name: 'Command Bar',
+    });
+    await commandBarInput.fill('Main');
+
+    const mainOption = commandBar.getByRole('option', {
+      name: 'Main',
+      exact: true,
+    });
+    await expect(mainOption).toBeVisible();
+    await expect(mainOption).toHaveAttribute('data-selected', 'true');
+
+    return { commandBar, commandBarInput };
+  }
+
+  test('uses plain Enter for direct dashboard navigation', async () => {
+    const { commandBarInput } = await openMainDashboardActionPage();
+
+    await commandBarInput.press('Enter');
+
+    await expect(page).toHaveURL(/\/reports\/[^/]+$/);
+    await expect(page.getByTestId('reports-page')).toBeVisible();
+  });
+
+  test('opens a dashboard action page with literal Ctrl+Enter', async () => {
+    const { commandBar, commandBarInput } =
+      await openMainDashboardActionPage();
+
+    await commandBarInput.press('Control+Enter');
+
+    await expect(
+      commandBar.getByPlaceholder('Search actions...'),
+    ).toBeVisible();
+    await expect(commandBar.getByRole('heading', { level: 2 })).toContainText(
+      'Main',
+    );
+    await expect(commandBar.getByRole('heading', { level: 2 })).toContainText(
+      'Reports',
+    );
+    await expect(commandBar.getByRole('option', { name: 'Main' })).toBeVisible();
+  });
+
+  test('favorites a dashboard action and shows it in the root palette', async () => {
+    const { commandBar, commandBarInput } =
+      await openMainDashboardActionPage();
+
+    await commandBarInput.press('Control+Enter');
+    await commandBar
+      .getByRole('option', { name: 'Add to favorites' })
+      .click();
+    await expect(
+      commandBar.getByRole('option', { name: 'Remove from favorites' }),
+    ).toBeVisible();
+    await expect(
+      commandBar.getByPlaceholder('Search actions...'),
+    ).toBeVisible();
+
+    await commandBar.getByRole('button', { name: 'Back' }).click();
+    const rootSearch = commandBar.getByRole('combobox', {
+      name: 'Command Bar',
+    });
+    await rootSearch.fill('');
+
+    const favorites = commandBar.getByRole('group', { name: 'Favorites' });
+    await expect(favorites).toBeVisible();
+    await expect(
+      favorites.getByRole('option', { name: 'Main' }),
+    ).toBeVisible();
+  });
+
+  test('matches the dashboard action page across themes', async () => {
+    const { commandBar, commandBarInput } =
+      await openMainDashboardActionPage();
+
+    await commandBarInput.press('Control+Enter');
+    await expect(commandBar.getByRole('option', { name: 'Main' })).toBeVisible();
+    await expect(commandBar.locator('[cmdk-root]')).toMatchThemeScreenshots();
+  });
+
+  test('matches the in-place dashboard Remove-favorite state across themes', async () => {
+    const { commandBar, commandBarInput } =
+      await openMainDashboardActionPage();
+
+    await commandBarInput.press('Control+Enter');
+    await commandBar
+      .getByRole('option', { name: 'Add to favorites' })
+      .click();
+    await expect(
+      commandBar.getByRole('option', { name: 'Remove from favorites' }),
+    ).toBeVisible();
+    await expect(commandBar.locator('[cmdk-root]')).toMatchThemeScreenshots();
+  });
 });
