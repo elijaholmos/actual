@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => ({
   setGlobalPref: vi.fn(),
   setPrivacyPref: vi.fn(),
   switchTheme: vi.fn(),
+  accountBalance: vi.fn((id: string) => ({ id })),
 }));
 
 const mockData = vi.hoisted(() => ({
@@ -159,7 +160,7 @@ vi.mock('#hooks/useThemeCatalog', () => ({
 }));
 
 vi.mock('#spreadsheet/bindings', () => ({
-  accountBalance: (id: string) => ({ id }),
+  accountBalance: mocks.accountBalance,
   allAccountBalance: () => ({}),
   offBudgetAccountBalance: () => ({}),
   onBudgetAccountBalance: () => ({}),
@@ -355,6 +356,36 @@ describe('CommandBar', () => {
       'data-selected',
       'true',
     );
+  });
+
+  it('filters account bindings before rendering unrelated balance details', async () => {
+    mockData.accounts = [
+      { id: 'account-1', name: 'Matching Account', closed: 0 },
+      { id: 'account-2', name: 'Unrelated Account', closed: 0 },
+    ];
+    renderOpenCommandBar();
+    mocks.accountBalance.mockClear();
+
+    const input = screen.getByPlaceholderText('Search Demo budget...');
+    await userEvent.setup().type(input, 'Matching');
+
+    const processedAccountIds = mocks.accountBalance.mock.calls.map(
+      ([id]) => id,
+    );
+    expect(processedAccountIds).not.toContain('account-2');
+    expect(processedAccountIds).toContain('account-1');
+
+    expect(
+      screen.getByRole('option', {
+        name: 'Matching Account',
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('option', {
+        name: 'Unrelated Account',
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Unrelated Account')).not.toBeInTheDocument();
   });
 
   it('wraps keyboard navigation at both ends of the root command list', async () => {

@@ -889,12 +889,16 @@ export function CommandBar() {
   const recentItemKeys = new Set(recentItems.map(item => item.key));
   const isRootItemVisible = (key: string) =>
     !isRootSearchEmpty || (!favoriteKeys.has(key) && !recentItemKeys.has(key));
+  const searchLower = search.toLowerCase();
+  const matchesSearch = (name: string) =>
+    name.toLowerCase().includes(searchLower);
   const sections: SearchSection[] = [
     {
       key: 'accounts',
       heading: t('Accounts'),
       items: [
-        ...(isRootItemVisible('account:onbudget')
+        ...(isRootItemVisible('account:onbudget') &&
+        matchesSearch(t('On Budget'))
           ? [
               {
                 id: 'onbudget',
@@ -910,7 +914,8 @@ export function CommandBar() {
               },
             ]
           : []),
-        ...(isRootItemVisible('account:offbudget')
+        ...(isRootItemVisible('account:offbudget') &&
+        matchesSearch(t('Off Budget'))
           ? [
               {
                 id: 'offbudget',
@@ -927,7 +932,11 @@ export function CommandBar() {
             ]
           : []),
         ...accounts
-          .filter(account => isRootItemVisible(`account:${account.id}`))
+          .filter(
+            account =>
+              isRootItemVisible(`account:${account.id}`) &&
+              matchesSearch(account.name),
+          )
           .map(account => ({
             ...account,
             content: (
@@ -1381,7 +1390,6 @@ export function CommandBar() {
     }
   }, [actionPageRef, genericActionSections.length, goBackToRoot, open, page]);
 
-  const searchLower = search.toLowerCase();
   const filteredSections = sections.map(section => ({
     ...section,
     items: section.items.filter(item =>
@@ -1462,7 +1470,6 @@ export function CommandBar() {
         inset: 0,
         zIndex: 3000,
         backgroundColor: 'rgba(1, 4, 9, 0.45)',
-        backdropFilter: 'blur(2px)',
         '@media (prefers-reduced-motion: no-preference)': {
           animation: `${overlayEnter} 0.14s ease`,
         },
