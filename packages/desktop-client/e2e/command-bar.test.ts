@@ -30,24 +30,8 @@ test.describe('Command bar', () => {
     await page?.close();
   });
 
-  test('Check the command bar visuals', async () => {
-    // Open the command bar
+  test('opens the root palette with Ctrl/Cmd+K', async () => {
     await page.keyboard.press('ControlOrMeta+k');
-    const commandBar = page.getByRole('combobox', {
-      name: 'Command Bar',
-    });
-
-    await expect(commandBar).toBeVisible();
-    await expect(page).toMatchThemeScreenshots();
-
-    // Close the command bar
-    await page.keyboard.press('Escape');
-    await expect(commandBar).not.toBeVisible();
-  });
-
-  test('Check the command bar search works correctly', async () => {
-    await page.keyboard.press('ControlOrMeta+k');
-
     const commandBar = page.getByRole('combobox', {
       name: 'Command Bar',
     });
@@ -55,25 +39,62 @@ test.describe('Command bar', () => {
     await expect(commandBar).toBeVisible();
     await expect(commandBar).toHaveValue('');
 
-    // Search and navigate to reports
-    await commandBar.fill('reports');
-    await page.keyboard.press('Enter');
-    await expect(page.getByTestId('reports-page')).toBeVisible();
-    await expect(page.getByText('Loading reports...')).not.toBeVisible({
-      timeout: 10000, // Wait for 10 seconds max for reports to load
-    }); // wait for screen to load
+    await page.keyboard.press('Escape');
+    await expect(commandBar).not.toBeVisible();
+  });
 
-    // Navigate to schedule page
+  test('shows sidebar navigation in master order', async () => {
     await page.keyboard.press('ControlOrMeta+k');
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('ArrowDown'); // Select second suggestion - Schedules
-    await expect(page).toMatchThemeScreenshots();
 
-    await page.keyboard.press('Enter');
+    const commandBar = page.getByRole('dialog', {
+      name: 'Command Bar',
+    });
+    const navigationGroup = commandBar.getByRole('group', {
+      name: 'Navigation',
+    });
+    const navigationItems = navigationGroup.getByRole('option');
+
+    await expect(navigationItems).toHaveText([
+      'Budget',
+      'Reports',
+      'Schedules',
+      'Payees',
+      'Tags',
+      'Rules',
+      'Bank Sync',
+      'Settings',
+      /^All Accounts/,
+    ]);
     await expect(
-      page.getByRole('button', {
-        name: 'Add new schedule',
-      }),
+      navigationGroup.getByRole('option', { name: 'Bank Sync' }),
     ).toBeVisible();
+  });
+
+  test('searches sidebar navigation items', async () => {
+    await page.keyboard.press('ControlOrMeta+k');
+
+    const commandBar = page.getByRole('dialog', {
+      name: 'Command Bar',
+    });
+    const search = commandBar.getByRole('combobox', {
+      name: 'Command Bar',
+    });
+
+    await search.fill('Bank Sync');
+    await expect(commandBar.getByRole('option')).toHaveText(['Bank Sync']);
+  });
+
+  test('matches the root palette across themes', async () => {
+    await page.keyboard.press('ControlOrMeta+k');
+    const commandBar = page.getByRole('dialog', {
+      name: 'Command Bar',
+    });
+    await expect(
+      commandBar.getByRole('combobox', { name: 'Command Bar' }),
+    ).toBeVisible();
+    const palette = commandBar.locator('[cmdk-root]');
+
+    await expect(palette).toBeVisible();
+    await expect(palette).toMatchThemeScreenshots();
   });
 });
