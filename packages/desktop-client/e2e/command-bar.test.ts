@@ -226,4 +226,51 @@ test.describe('Command bar', () => {
     await expect(actionPanel).toBeVisible();
     await expect(actionPanel).toMatchThemeScreenshots();
   });
+
+  test('favorites an account action and shows it in the root palette', async () => {
+    const { commandBar, search } = await searchForDemoAccount(page);
+
+    await search.press('Control+Enter');
+    await expect(
+      commandBar.getByPlaceholder('Search actions...'),
+    ).toBeVisible();
+
+    await commandBar
+      .getByRole('option', { name: 'Add to favorites' })
+      .click();
+    await expect(
+      commandBar.getByRole('option', { name: 'Remove from favorites' }),
+    ).toBeVisible();
+    await expect(
+      commandBar.getByPlaceholder('Search actions...'),
+    ).toBeVisible();
+
+    await commandBar.getByRole('button', { name: 'Back' }).click();
+    const rootSearch = commandBar.getByRole('combobox', {
+      name: 'Command Bar',
+    });
+    await rootSearch.fill('');
+
+    const favorites = commandBar.getByRole('group', { name: 'Favorites' });
+    await expect(favorites).toBeVisible();
+    await expect(
+      favorites.getByRole('option', { name: demoAccountName }),
+    ).toBeVisible();
+  });
+
+  test('matches the in-place Remove-favorite action state across themes', async () => {
+    const { commandBar, search } = await searchForDemoAccount(page);
+
+    await search.press('Control+Enter');
+    await commandBar
+      .getByRole('option', { name: 'Add to favorites' })
+      .click();
+    await expect(
+      commandBar.getByRole('option', { name: 'Remove from favorites' }),
+    ).toBeVisible();
+
+    const actionPanel = commandBar.locator('[cmdk-root]');
+    await expect(actionPanel).toBeVisible();
+    await expect(actionPanel).toMatchThemeScreenshots();
+  });
 });
