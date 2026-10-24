@@ -32,7 +32,7 @@ export type ActionPageProps = Readonly<{
   onSelectAction: (action: ActionItem) => void;
   onBack?: () => void;
   primaryShortcutHint?: ShortcutHintType;
-  secondaryShortcutHint?: ShortcutHintType;
+  backShortcutHint?: ShortcutHintType;
   searchPlaceholder?: string;
   listClassName: string;
 }>;
@@ -152,6 +152,16 @@ function ActionRow({
     <Command.Item
       value={value}
       aria-label={action.name}
+      onKeyDown={event => {
+        if (
+          action.id === 'favorite' &&
+          (event.key === 'Enter' || event.key === ' ' || event.key === 'Space')
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          onSelect(action);
+        }
+      }}
       onSelect={() => onSelect(action)}
       className={`${actionItemClassName} ${action.destructive ? destructiveActionClassName : ''}`}
     >
@@ -198,7 +208,7 @@ export function ActionPage({
   onSelectAction,
   onBack,
   primaryShortcutHint,
-  secondaryShortcutHint,
+  backShortcutHint,
   searchPlaceholder,
   listClassName,
 }: ActionPageProps) {
@@ -216,7 +226,6 @@ export function ActionPage({
       ),
     }))
     .filter(section => section.items.length > 0);
-
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
@@ -275,7 +284,7 @@ export function ActionPage({
           </Command.Empty>
         )}
       </Command.List>
-      {(primaryShortcutHint != null || secondaryShortcutHint != null) && (
+      {(primaryShortcutHint != null || backShortcutHint != null) && (
         <View
           className={actionFooterClassName}
           aria-label={t('Keyboard shortcuts')}
@@ -283,9 +292,7 @@ export function ActionPage({
           {primaryShortcutHint != null && (
             <ShortcutHint {...primaryShortcutHint} />
           )}
-          {secondaryShortcutHint != null && (
-            <ShortcutHint {...secondaryShortcutHint} />
-          )}
+          {backShortcutHint != null && <ShortcutHint {...backShortcutHint} />}
         </View>
       )}
     </View>

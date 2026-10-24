@@ -108,6 +108,40 @@ describe('CommandBar command registry', () => {
     expect(result.current[0]?.destructive).toBe(true);
   });
 
+  it('updates presentation when an instance id changes', () => {
+    const { result, rerender } = renderHook(
+      props => useRegisteredCommands(props),
+      {
+        wrapper,
+        initialProps: {
+          ownerId: 'accounts',
+          commands: [
+            {
+              id: 'open',
+              instanceId: 'first',
+              label: 'Open account',
+              execute: vi.fn(),
+            },
+          ],
+        },
+      },
+    );
+
+    rerender({
+      ownerId: 'accounts',
+      commands: [
+        {
+          id: 'open',
+          instanceId: 'second',
+          label: 'Open account',
+          execute: vi.fn(),
+        },
+      ],
+    });
+
+    expect(result.current[0]?.instanceId).toBe('second');
+  });
+
   it('preserves commands from multiple owners', () => {
     function useTwoOwners() {
       useRegisterCommandBarCommands('accounts', [
@@ -344,6 +378,32 @@ describe('CommandBar command registry', () => {
       consoleError.mockRestore();
     }
   });
+
+  it('omits ambiguous concurrent registrations without stable instance ids', () => {
+    const error = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    try {
+      const { result } = renderHook(
+        () => {
+          useRegisterCommandBarCommands('reports', [
+            { id: 'same', label: 'First', execute: vi.fn() },
+          ]);
+          useRegisterCommandBarCommands('reports', [
+            { id: 'same', label: 'Second', execute: vi.fn() },
+          ]);
+          return useCommandBarCommands();
+        },
+        { wrapper },
+      );
+      expect(result.current).toEqual([]);
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining('unique instanceId'),
+      );
+    } finally {
+      error.mockRestore();
+    }
+  });
 });
 
 function CleanupTest({
@@ -398,7 +458,12 @@ function ConcurrentOwnerTest({
 
 function SameOwner({ firstLabel }: { firstLabel: string }) {
   useRegisterCommandBarCommands('reports', [
-    { id: 'same', label: firstLabel, execute: vi.fn() },
+    {
+      id: 'same',
+      instanceId: firstLabel === 'First instance' ? 'first' : 'second',
+      label: firstLabel,
+      execute: vi.fn(),
+    },
   ]);
   return null;
 }

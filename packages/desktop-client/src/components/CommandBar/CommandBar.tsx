@@ -7,18 +7,14 @@ import { Button } from '@actual-app/components/button';
 import {
   SvgAdd,
   SvgArrowLeft,
-  SvgBookmark,
+  SvgBookmarkOutlineAdd,
   SvgClose,
   SvgCog,
   SvgKeyboard,
   SvgLibrary,
   SvgLockOpen,
   SvgReports,
-  SvgStoreFront,
   SvgSwap,
-  SvgTag,
-  SvgTuning,
-  SvgWallet,
   SvgWindowOpen,
 } from '@actual-app/components/icons/v1';
 import {
@@ -28,6 +24,7 @@ import {
   SvgHelp,
   SvgMoonStars,
   SvgNotesPaperText,
+  SvgRemoveAlternate,
   SvgSearchAlternate,
   SvgViewHide,
   SvgViewShow,
@@ -47,13 +44,12 @@ import { format } from 'date-fns';
 import {
   useReopenAccountMutation,
   useSyncAndDownloadMutation,
-} from '#accounts/mutations';
+} from '#accounts';
 import { useAccountSyncStatus } from '#accounts/useAccountSyncStatus';
 import { closeBudget } from '#budgetfiles/budgetfilesSlice';
 import {
   favoriteRefKey,
   parseCommandBarFavorites,
-  resolveCommandBarFavorites,
   updateCommandBarFavorites,
 } from '#commandbar/commandBarFavorites';
 import type { CommandBarFavoriteRef } from '#commandbar/commandBarFavorites';
@@ -71,7 +67,6 @@ import {
 } from '#commandbar/commandBarSlice';
 import { AccountStatusIndicator } from '#components/accounts/AccountStatusIndicator';
 import { getSidebarMenuItemPath } from '#components/sidebar/sidebarMenu';
-import type { SidebarMenuItemId } from '#components/sidebar/sidebarMenu';
 import { useSidebarMenuItemDetails } from '#components/sidebar/useSidebarMenuItemDetails';
 import { useTour } from '#components/tour/TourProvider';
 import { useAccounts } from '#hooks/useAccounts';
@@ -89,7 +84,6 @@ import { addNotification } from '#notifications/notificationsSlice';
 import { useDispatch, useSelector } from '#redux';
 import {
   accountBalance,
-  allAccountBalance,
   offBudgetAccountBalance,
   onBudgetAccountBalance,
 } from '#spreadsheet/bindings';
@@ -106,7 +100,13 @@ import {
 } from '#style/customThemes';
 
 import { ActionPage } from './ActionPage';
-import { BalanceRow, FooterHint, Highlight, KeyChip } from './primitives';
+import {
+  BalanceRow,
+  FooterHint,
+  Highlight,
+  KeyChip,
+  ShortcutHint,
+} from './primitives';
 import {
   actionItemClassName,
   destructiveActionClassName,
@@ -121,18 +121,21 @@ import type {
   ActionItem,
   ActionPageHeader,
   ActionSection,
+  FavoriteControl,
   QuickAction,
   SearchSection,
 } from './types';
 
-type Page = 'root' | 'themes' | 'account-actions' | 'report-actions';
+type Page =
+  | 'root'
+  | 'themes'
+  | 'account-actions'
+  | 'report-actions'
+  | 'actions';
 
 type ContextualItem =
   | { type: 'account'; item: AccountEntity }
   | { type: 'report'; item: CustomReportEntity };
-type ContextualItemRef =
-  | { type: 'account'; id: string }
-  | { type: 'report'; id: string };
 
 export function getCommandItemValue(sectionKey: string, itemId: string) {
   return `${sectionKey}:${itemId}`;
@@ -165,9 +168,7 @@ type ResolvedRecentItem = Readonly<{
   key: string;
   path: string;
   name: string;
-  Icon:
-    | ComponentType<SVGProps<SVGElement>>
-    | ComponentType<SVGProps<SVGSVGElement>>;
+  Icon: ComponentType<SVGProps<SVGSVGElement>>;
 }>;
 
 function contextualFavoriteRef(item: ContextualItem): CommandBarFavoriteRef {
@@ -179,15 +180,16 @@ function contextualFavoriteRef(item: ContextualItem): CommandBarFavoriteRef {
 
 export function CommandBar() {
   const { t } = useTranslation();
-  const { availableItems: sidebarItems } = useSidebarMenu();
-  const sidebarItemDetails = useSidebarMenuItemDetails();
   const open = useSelector(state => state.commandBar.open);
   const [search, setSearch] = useState('');
   // 'themes' is a nested palette page (VS Code-style): the "Change theme…"
   // action transitions into it; esc / backspace-on-empty goes back.
   const [page, setPage] = useState<Page>('root');
-  const [contextualItemRef, setContextualItemRef] =
-    useState<ContextualItemRef | null>(null);
+  const [contextualItem, setContextualItem] = useState<ContextualItem | null>(
+    null,
+  );
+  const [actionPageRef, setActionPageRef] =
+    useState<CommandBarFavoriteRef | null>(null);
   const [recentRefs, setRecentRefs] = useState<readonly CommandBarRecentRef[]>(
     [],
   );
@@ -209,6 +211,8 @@ export function CommandBar() {
   const [isPrivacyEnabledPref, setPrivacyEnabledPref] =
     useSyncedPref('isPrivacyEnabled');
   const isPrivacyEnabled = String(isPrivacyEnabledPref) === 'true';
+  const { availableItems, sidebarItems } = useSidebarMenu();
+  const sidebarItemDetails = useSidebarMenuItemDetails();
 
   const [currentTheme, switchTheme] = useTheme();
   const [installedLightThemeJson, setInstalledLightThemeJson] = useGlobalPref(
@@ -233,7 +237,7 @@ export function CommandBar() {
 
   const goBackToRoot = useCallback(() => {
     setPage('root');
-    setContextualItemRef(null);
+    setContextualItem(null);
     setSearch(rootSearch);
     setSelectedValue(rootSelectedValue);
     setAnimatePageChange(true);
@@ -299,10 +303,9 @@ export function CommandBar() {
       dispatch(
         addNotification({
           notification: {
-            ...getExportErrorNotification(
-              t(
-                'An unknown error occurred while exporting. Please report this as a new issue on GitHub.',
-              ),
+            type: 'error',
+            message: t(
+              'An unknown error occurred while exporting. Please report this as a new issue on GitHub.',
             ),
           },
         }),
@@ -347,67 +350,43 @@ export function CommandBar() {
     }
   }, [budgetName, dispatch, t]);
 
+  // Not memoized: rows embed the current search (via <Highlight>), and the
+  // component re-renders on every keystroke anyway.
   const navigationItems = useMemo(() => {
-    const sidebarNavigationItems = sidebarItems.map(item => ({
-      id: item.id === 'reports' ? 'reports-nav' : item.id,
-      name: sidebarItemDetails[item.id]?.title ?? item.id,
-      path: getSidebarMenuItemPath(item.id as SidebarMenuItemId, !item.hidden),
-      Icon: sidebarItemDetails[item.id]?.Icon ?? SvgCog,
-    }));
+    const sidebarNavigationItems = availableItems.map(item => {
+      const details = sidebarItemDetails[item.id];
+      const isInSidebar = sidebarItems.some(
+        sidebarItem => sidebarItem.id === item.id,
+      );
+      return {
+        id: item.id === 'reports' ? 'reports-nav' : item.id,
+        name: details.title,
+        path:
+          item.id === 'reports'
+            ? '/reports'
+            : getSidebarMenuItemPath(item.id, isInSidebar),
+        Icon: (props: SVGProps<SVGSVGElement>) => <details.Icon {...props} />,
+      };
+    });
     return [
-      ...(sidebarNavigationItems.length > 0
-        ? sidebarNavigationItems
-        : [
-            {
-              id: 'budget',
-              name: t('Budget'),
-              path: '/budget',
-              Icon: SvgWallet,
-            },
-            {
-              id: 'reports-nav',
-              name: t('Reports'),
-              path: '/reports',
-              Icon: SvgReports,
-            },
-            {
-              id: 'schedules',
-              name: t('Schedules'),
-              path: '/schedules',
-              Icon: SvgCalendar3,
-            },
-            {
-              id: 'payees',
-              name: t('Payees'),
-              path: '/payees',
-              Icon: SvgStoreFront,
-            },
-            { id: 'rules', name: t('Rules'), path: '/rules', Icon: SvgTuning },
-            { id: 'tags', name: t('Tags'), path: '/tags', Icon: SvgTag },
-          ]),
+      ...sidebarNavigationItems,
       { id: 'settings', name: t('Settings'), path: '/settings', Icon: SvgCog },
       {
         id: 'accounts',
         name: t('All Accounts'),
         path: '/accounts',
-        content: (
-          <BalanceRow<'account', 'accounts-balance'>
-            label={t('All Accounts')}
-            binding={allAccountBalance()}
-            query={search}
-          />
-        ),
         Icon: SvgLibrary,
       },
     ];
-  }, [search, sidebarItemDetails, sidebarItems, t]);
+  }, [availableItems, sidebarItemDetails, sidebarItems, t]);
 
   useEffect(() => {
     // Reset search and page when closing
     if (!open) {
       setSearch('');
       setPage('root');
-      setContextualItemRef(null);
+      setContextualItem(null);
+      setActionPageRef(null);
       setSelectedValue('');
       setRootSearch('');
       setRootSelectedValue('');
@@ -418,6 +397,20 @@ export function CommandBar() {
   const { data: allAccounts = [] } = useAccounts();
   const { data: customReports = [] } = useReports();
   const { data: dashboardPages = [] } = useDashboardPages();
+
+  // Canonical root-group presentation for action-page subtitles. This is
+  // resolved from the reference so Recent and Favorites retain their origin.
+  function getRootSectionLabel(ref: CommandBarFavoriteRef): string {
+    if (ref.type === 'navigation') return t('Navigation');
+    if (ref.type === 'dashboard') return t('Reports');
+    if (ref.type === 'report') return t('Custom Reports');
+    if (ref.type === 'quick-action') return t('Quick actions');
+    if (ref.type === 'page-action') return t('Page actions');
+    if (ref.id === 'onbudget' || ref.id === 'offbudget') return t('Accounts');
+    return allAccounts.find(account => account.id === ref.id)?.closed
+      ? t('Closed Accounts')
+      : t('Accounts');
+  }
 
   useEffect(() => {
     const recentRef = getCommandBarRecentRef(location.pathname, {
@@ -454,10 +447,7 @@ export function CommandBar() {
   const accounts = allAccounts.filter(acc => !acc.closed);
   const closedAccounts = allAccounts.filter(acc => !!acc.closed);
   const getAccountSyncStatus = useAccountSyncStatus();
-  const favoriteRefs = useMemo(
-    () => parseCommandBarFavorites(storedFavorites),
-    [storedFavorites],
-  );
+  const favoriteRefs = parseCommandBarFavorites(storedFavorites);
   const favoriteKeys = new Set(favoriteRefs.map(favoriteRefKey));
   const toggleFavorite = useCallback(
     (ref: CommandBarFavoriteRef) => {
@@ -477,95 +467,79 @@ export function CommandBar() {
     },
     [allAccounts, customReports, setStoredFavorites, storedFavorites],
   );
-  const resolvedFavorites = resolveCommandBarFavorites(
-    favoriteRefs,
-    allAccounts,
-    customReports,
-  );
-
   const getContextualItem = useCallback(
-    (value: string): ContextualItemRef | null => {
-      const recentRef = recentRefs.find(
-        ref => `recent:${commandBarRecentRefKey(ref)}` === value,
-      );
-      if (recentRef?.type === 'account' || recentRef?.type === 'report') {
-        return recentRef;
-      }
+    (value: string): ContextualItem | null => {
       const favoriteRef = favoriteRefs.find(
         ref => `favorites:${favoriteRefKey(ref)}` === value,
       );
-      if (favoriteRef?.type === 'account') {
+      const favoriteKey = value.startsWith('favorites:')
+        ? value.slice('favorites:'.length)
+        : null;
+      const favoriteAccountId =
+        favoriteRef?.type === 'account'
+          ? favoriteRef.id
+          : favoriteKey?.startsWith('account:')
+            ? favoriteKey.slice('account:'.length)
+            : null;
+      const favoriteReportId =
+        favoriteRef?.type === 'report'
+          ? favoriteRef.id
+          : favoriteKey?.startsWith('report:')
+            ? favoriteKey.slice('report:'.length)
+            : null;
+      if (favoriteAccountId != null) {
         const account = [...accounts, ...closedAccounts].find(
-          item => item.id === favoriteRef.id,
+          item => item.id === favoriteAccountId,
         );
-        if (account) return { type: 'account', id: account.id };
+        if (account) return { type: 'account', item: account };
       }
-      if (favoriteRef?.type === 'report') {
-        const report = customReports.find(item => item.id === favoriteRef.id);
-        if (report) return { type: 'report', id: report.id };
+      if (favoriteReportId != null) {
+        const report = customReports.find(item => item.id === favoriteReportId);
+        if (report) return { type: 'report', item: report };
       }
 
       const account = [...accounts, ...closedAccounts].find(
         item => `accounts${item.closed ? '-closed' : ''}:${item.id}` === value,
       );
-      if (account) return { type: 'account', id: account.id };
+      if (account) return { type: 'account', item: account };
 
       const report = customReports.find(
         item => `reports-custom:${item.id}` === value,
       );
-      return report ? { type: 'report', id: report.id } : null;
+      return report ? { type: 'report', item: report } : null;
     },
-    [accounts, closedAccounts, customReports, favoriteRefs, recentRefs],
+    [accounts, closedAccounts, customReports, favoriteRefs],
   );
 
-  const contextualItem = useMemo<ContextualItem | null>(() => {
-    if (contextualItemRef?.type === 'account') {
-      const account = [...accounts, ...closedAccounts].find(
-        item => item.id === contextualItemRef.id,
-      );
-      return account ? { type: 'account', item: account } : null;
-    }
-    if (contextualItemRef?.type === 'report') {
-      const report = customReports.find(
-        item => item.id === contextualItemRef.id,
-      );
-      return report ? { type: 'report', item: report } : null;
-    }
-    return null;
-  }, [accounts, closedAccounts, contextualItemRef, customReports]);
-
   useEffect(() => {
-    if (
-      (page === 'account-actions' || page === 'report-actions') &&
-      contextualItemRef != null &&
-      contextualItem == null
-    ) {
+    if (page !== 'account-actions' && page !== 'report-actions') return;
+    if (actionPageRef == null) return;
+    const liveItem = getContextualItem(
+      `favorites:${favoriteRefKey(actionPageRef)}`,
+    );
+    if (liveItem == null) {
       goBackToRoot();
+      return;
     }
-  }, [contextualItem, contextualItemRef, goBackToRoot, page]);
-
-  const openSelectedContextualPage = useCallback(() => {
-    if (page !== 'root') return;
-    const item = getContextualItem(selectedValue);
-    if (!item) return;
-
-    setRootSearch(search);
-    setRootSelectedValue(selectedValue);
-    setContextualItemRef(item);
-    setPage(item.type === 'account' ? 'account-actions' : 'report-actions');
-    setSearch('');
-    setSelectedValue('action:primary:open');
-    setAnimatePageChange(true);
-  }, [getContextualItem, page, search, selectedValue]);
+    if (
+      contextualItem?.item.id !== liveItem.item.id ||
+      contextualItem.item.name !== liveItem.item.name ||
+      ('closed' in contextualItem.item &&
+        'closed' in liveItem.item &&
+        contextualItem.item.closed !== liveItem.item.closed)
+    ) {
+      setContextualItem(liveItem);
+    }
+  }, [actionPageRef, contextualItem, getContextualItem, goBackToRoot, page]);
 
   const openEventListener = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        // Do not open CommandBar if a modal is already open
-        if (modalStack.length > 0) return;
-        if (!open) dispatch(openCommandBar());
-      }
+      if (e.key !== 'k' || (!e.metaKey && !e.ctrlKey) || open) return;
+
+      e.preventDefault();
+      // Do not open CommandBar if a modal is already open
+      if (modalStack.length > 0) return;
+      dispatch(openCommandBar());
     },
     [dispatch, modalStack.length, open],
   );
@@ -600,8 +574,7 @@ export function CommandBar() {
   );
 
   // Built-in quick actions. Each one is wired to an existing app flow that
-  // works from any page. Contributed commands are appended below and kept
-  // separate from these static actions.
+  // works from any page.
   const builtinQuickActions: QuickAction[] = [
     {
       id: 'sync-accounts',
@@ -678,45 +651,23 @@ export function CommandBar() {
     },
   ];
   const quickActions: QuickAction[] = builtinQuickActions;
-  const pageActionSection: SearchSection | null =
-    contributedCommands.length > 0
-      ? {
-          key: 'page-actions',
-          heading: t('Page actions'),
-          items: contributedCommands.map(command => ({
-            id: command.id,
-            name: command.label,
-            destructive: command.destructive,
-          })),
-          onSelect: ({ id }) => {
-            const command = contributedCommands.find(
-              command => command.id === id,
-            );
-            if (!command) return;
-            dispatch(closeCommandBar());
-            void (async () => {
-              try {
-                await command.execute();
-              } catch (error) {
-                console.error('Command bar action failed', {
-                  commandId: command.id,
-                  error,
-                });
-              }
-            })();
-          },
-        }
-      : null;
 
   const runContextualAction = useCallback(
     (action: ActionItem) => {
+      const execution = action.primaryAction;
+
+      if (action.id === 'favorite') {
+        void execution.run();
+        return;
+      }
+
       // Contextual actions always close before they navigate, open a modal, or
       // start a mutation. This also keeps the palette from sitting above the
       // flow it just launched.
-      if (action.id !== 'favorite') dispatch(closeCommandBar());
+      if (!action.keepOpen) dispatch(closeCommandBar());
       void (async () => {
         try {
-          await action.run();
+          await execution.run();
         } catch (error) {
           console.error('Command bar action failed', {
             commandId: action.id,
@@ -728,19 +679,16 @@ export function CommandBar() {
     [dispatch],
   );
 
-  const contextualFavoriteAction: ActionItem | null =
+  const contextualFavoriteControl: FavoriteControl | undefined =
     contextualItem == null
-      ? null
+      ? undefined
       : (() => {
           const ref = contextualFavoriteRef(contextualItem);
-          const isFavorite = favoriteKeys.has(favoriteRefKey(ref));
           return {
-            id: 'favorite',
-            name: isFavorite
-              ? t('Remove from favorites')
-              : t('Add to favorites'),
-            Icon: SvgBookmark,
-            run: () => toggleFavorite(ref),
+            isPressed: favoriteKeys.has(favoriteRefKey(ref)),
+            onToggle: () => toggleFavorite(ref),
+            addLabel: t('Add to favorites'),
+            removeLabel: t('Remove from favorites'),
           };
         })();
 
@@ -748,13 +696,21 @@ export function CommandBar() {
     ? contextualItem.type === 'account'
       ? {
           name: contextualItem.item.name,
-          typeLabel: t('Account'),
+          typeLabel: getRootSectionLabel({
+            type: 'account',
+            id: contextualItem.item.id,
+          }),
           Icon: SvgLibrary,
+          favorite: contextualFavoriteControl,
         }
       : {
           name: contextualItem.item.name,
-          typeLabel: t('Custom report'),
+          typeLabel: getRootSectionLabel({
+            type: 'report',
+            id: contextualItem.item.id,
+          }),
           Icon: SvgNotesPaperText,
+          favorite: contextualFavoriteControl,
         }
     : null;
 
@@ -769,8 +725,11 @@ export function CommandBar() {
                 id: 'open',
                 name: t('Open'),
                 Icon: SvgWindowOpen,
-                run: async () => {
-                  await navigate(`/accounts/${contextualItem.item.id}`);
+                primaryAction: {
+                  label: t('Open'),
+                  run: async () => {
+                    await navigate(`/accounts/${contextualItem.item.id}`);
+                  },
                 },
               },
             ],
@@ -779,26 +738,33 @@ export function CommandBar() {
             key: 'additional',
             heading: t('Additional'),
             items: [
-              ...(contextualFavoriteAction ? [contextualFavoriteAction] : []),
               contextualItem.item.closed
                 ? {
                     id: 'reopen',
                     name: t('Reopen account'),
                     Icon: SvgLockOpen,
-                    run: () =>
-                      reopenAccount.mutateAsync({ id: contextualItem.item.id }),
+                    primaryAction: {
+                      label: t('Reopen account'),
+                      run: () =>
+                        reopenAccount.mutateAsync({
+                          id: contextualItem.item.id,
+                        }),
+                    },
                   }
                 : {
                     id: 'close',
                     name: t('Close account'),
                     Icon: SvgClose,
                     destructive: true,
-                    run: async () => {
-                      await dispatch(
-                        openAccountCloseModal({
-                          accountId: contextualItem.item.id,
-                        }),
-                      );
+                    primaryAction: {
+                      label: t('Close account'),
+                      run: async () => {
+                        await dispatch(
+                          openAccountCloseModal({
+                            accountId: contextualItem.item.id,
+                          }),
+                        );
+                      },
                     },
                   },
             ],
@@ -814,16 +780,16 @@ export function CommandBar() {
                   id: 'open',
                   name: t('Open'),
                   Icon: SvgWindowOpen,
-                  run: async () => {
-                    await navigate(`/reports/custom/${contextualItem.item.id}`);
+                  primaryAction: {
+                    label: t('Open'),
+                    run: async () => {
+                      await navigate(
+                        `/reports/custom/${contextualItem.item.id}`,
+                      );
+                    },
                   },
                 },
               ],
-            },
-            {
-              key: 'additional',
-              heading: t('Additional'),
-              items: contextualFavoriteAction ? [contextualFavoriteAction] : [],
             },
           ]
         : [];
@@ -1003,11 +969,12 @@ export function CommandBar() {
         if (item) handleNavigate(item.path);
       },
     },
-    ...(pageActionSection ? [pageActionSection] : []),
     {
       key: 'actions',
       heading: t('Quick actions'),
-      items: quickActions,
+      items: quickActions.filter(action =>
+        isRootItemVisible(`quick-action:${action.id}`),
+      ),
       onSelect: ({ id }) => {
         const action = quickActions.find(action => action.id === id);
         if (!action) return;
@@ -1050,20 +1017,96 @@ export function CommandBar() {
     },
   ];
 
-  const favoriteItems = resolvedFavorites.map(({ ref, item }) => {
-    if (ref.type === 'account') {
-      return {
-        id: favoriteRefKey(ref),
-        name: item.name,
-        Icon: SvgLibrary,
-      };
-    }
+  const pageActionSection: SearchSection | null =
+    contributedCommands.length > 0
+      ? {
+          key: 'page-actions',
+          heading: t('Page actions'),
+          items: contributedCommands
+            .filter(
+              command =>
+                !isRootSearchEmpty ||
+                !favoriteKeys.has(
+                  favoriteRefKey({
+                    type: 'page-action',
+                    ownerId: command.ownerId ?? '',
+                    commandId: command.commandId ?? command.id,
+                    ...(command.instanceId != null
+                      ? { instanceId: command.instanceId }
+                      : {}),
+                  }),
+                ),
+            )
+            .map(command => ({
+              id: command.id,
+              name: command.label,
+              destructive: command.destructive,
+            })),
+          onSelect: ({ id }) => {
+            const command = contributedCommands.find(
+              command => command.id === id,
+            );
+            if (!command) return;
 
-    return {
-      id: favoriteRefKey(ref),
-      name: item.name,
-      Icon: SvgNotesPaperText,
-    };
+            dispatch(closeCommandBar());
+            void (async () => {
+              try {
+                await command.execute();
+              } catch (error) {
+                console.error('Command bar action failed', {
+                  commandId: command.id,
+                  error,
+                });
+              }
+            })();
+          },
+        }
+      : null;
+
+  const favoriteItems = favoriteRefs.flatMap(ref => {
+    let name: string | undefined;
+    let Icon: ComponentType<SVGProps<SVGSVGElement>> | undefined;
+    if (ref.type === 'account') {
+      name =
+        ref.id === 'onbudget'
+          ? t('On Budget')
+          : ref.id === 'offbudget'
+            ? t('Off Budget')
+            : allAccounts.find(item => item.id === ref.id)?.name;
+      Icon = SvgLibrary;
+    } else if (ref.type === 'report') {
+      name = customReports.find(item => item.id === ref.id)?.name;
+      Icon = SvgNotesPaperText;
+    } else if (ref.type === 'navigation') {
+      const item = navigationItems.find(item => item.id === ref.id);
+      name = item?.name;
+      Icon = item?.Icon;
+    } else if (ref.type === 'dashboard') {
+      name = dashboardPages.find(item => item.id === ref.id)?.name;
+      Icon = SvgReports;
+    } else if (ref.type === 'quick-action') {
+      const item = quickActions.find(item => item.id === ref.id);
+      name = item?.name;
+      Icon = item?.Icon;
+    } else {
+      const command = contributedCommands.find(
+        command =>
+          (command.ownerId ?? '') === ref.ownerId &&
+          (command.commandId ?? command.id) === ref.commandId &&
+          command.instanceId === ref.instanceId,
+      );
+      name = command?.label;
+    }
+    const destructive =
+      ref.type === 'page-action'
+        ? contributedCommands.find(
+            command =>
+              (command.ownerId ?? '') === ref.ownerId &&
+              (command.commandId ?? command.id) === ref.commandId &&
+              command.instanceId === ref.instanceId,
+          )?.destructive
+        : false;
+    return name ? [{ id: favoriteRefKey(ref), name, Icon, destructive }] : [];
   });
   const recentSection: SearchSection | null =
     isRootSearchEmpty && recentItems.length > 0
@@ -1077,7 +1120,7 @@ export function CommandBar() {
           })),
           onSelect: ({ id }) => {
             const recentItem = recentItems.find(item => item.key === id);
-            if (recentItem) handleNavigate(recentItem.path);
+            if (recentItem) runRootRef(recentItem.ref);
           },
         }
       : null;
@@ -1088,18 +1131,262 @@ export function CommandBar() {
           heading: t('Favorites'),
           items: favoriteItems,
           onSelect: ({ id }) => {
-            const favorite = resolvedFavorites.find(
-              item => favoriteRefKey(item.ref) === id,
-            );
-            if (!favorite) return;
-            handleNavigate(
-              favorite.ref.type === 'account'
-                ? `/accounts/${favorite.ref.id}`
-                : `/reports/custom/${favorite.ref.id}`,
-            );
+            const ref = favoriteRefs.find(ref => favoriteRefKey(ref) === id);
+            if (!ref) return;
+            runRootRef(ref);
           },
         }
       : null;
+
+  // Every root row has one canonical descriptor. The section is only a visual
+  // grouping; it is never part of the persisted identity.
+  const rootRefForValue = (value: string): CommandBarFavoriteRef | null => {
+    const [section, ...parts] = value.split(':');
+    const id = parts.join(':');
+    if (section === 'favorites') {
+      return favoriteRefs.find(ref => favoriteRefKey(ref) === id) ?? null;
+    }
+    if (section === 'recent') {
+      return recentItems.find(item => item.key === id)?.ref ?? null;
+    }
+    if (section === 'navigation') return { type: 'navigation', id };
+    if (section === 'accounts') {
+      return id === 'onbudget' || id === 'offbudget'
+        ? { type: 'account', id }
+        : { type: 'account', id };
+    }
+    if (section === 'accounts-closed') return { type: 'account', id };
+    if (section === 'reports') return { type: 'dashboard', id };
+    if (section === 'reports-custom') return { type: 'report', id };
+    if (section === 'actions') return { type: 'quick-action', id };
+    if (section === 'page-actions') {
+      const command = contributedCommands.find(command => command.id === id);
+      return command
+        ? {
+            type: 'page-action',
+            ownerId: command.ownerId ?? '',
+            commandId: command.commandId ?? command.id,
+            ...(command.instanceId != null
+              ? { instanceId: command.instanceId }
+              : {}),
+          }
+        : null;
+    }
+    return null;
+  };
+
+  function runRootRef(ref: CommandBarFavoriteRef) {
+    if (ref.type === 'navigation') {
+      const item = navigationItems.find(item => item.id === ref.id);
+      if (item) handleNavigate(item.path);
+    } else if (ref.type === 'account') {
+      handleNavigate(`/accounts/${ref.id}`);
+    } else if (ref.type === 'dashboard') {
+      handleNavigate(`/reports/${ref.id}`);
+    } else if (ref.type === 'report') {
+      handleNavigate(`/reports/custom/${ref.id}`);
+    } else if (ref.type === 'quick-action') {
+      const action = quickActions.find(action => action.id === ref.id);
+      if (action) {
+        if (!action.keepOpen) dispatch(closeCommandBar());
+        runSafely(ref.id, action.run);
+      }
+    } else {
+      const command = contributedCommands.find(
+        command =>
+          (command.ownerId ?? '') === ref.ownerId &&
+          (command.commandId ?? command.id) === ref.commandId &&
+          command.instanceId === ref.instanceId,
+      );
+      if (command) {
+        dispatch(closeCommandBar());
+        runSafely(command.id, command.execute);
+      }
+    }
+  }
+
+  function runSafely(commandId: string, run: () => void | Promise<void>) {
+    void Promise.resolve()
+      .then(run)
+      .catch(error => {
+        console.error('Command bar action failed', { commandId, error });
+      });
+  }
+
+  const openActionForRef = useCallback(
+    (ref: CommandBarFavoriteRef, rootValue: string) => {
+      setRootSearch(search);
+      setRootSelectedValue(rootValue);
+      setActionPageRef(ref);
+      const contextual = getContextualItem(
+        ref.type === 'account' || ref.type === 'report'
+          ? `favorites:${favoriteRefKey(ref)}`
+          : rootValue,
+      );
+      setContextualItem(contextual);
+      setPage(
+        contextual?.type === 'account'
+          ? 'account-actions'
+          : contextual?.type === 'report'
+            ? 'report-actions'
+            : 'actions',
+      );
+      setSearch('');
+      setSelectedValue('action:primary:open');
+      setAnimatePageChange(true);
+    },
+    [getContextualItem, search],
+  );
+
+  const selectedRootRef =
+    page === 'root' ? rootRefForValue(selectedValue) : null;
+  function openSelectedContextualPage() {
+    if (page !== 'root' || selectedRootRef == null) return;
+    openActionForRef(selectedRootRef, selectedValue);
+  }
+
+  const genericActionSections: readonly ActionSection[] =
+    actionPageRef == null || contextualItem != null
+      ? []
+      : (() => {
+          const ref = actionPageRef;
+          let name = '';
+          let Icon: ComponentType<SVGProps<SVGSVGElement>> | undefined;
+          let run: (() => void | Promise<void>) | undefined;
+          let destructive = false;
+          if (ref.type === 'navigation') {
+            const item = navigationItems.find(item => item.id === ref.id);
+            name = item?.name ?? '';
+            Icon = item?.Icon;
+            run = item ? () => handleNavigate(item.path) : undefined;
+          } else if (ref.type === 'account') {
+            const aggregate = ref.id === 'onbudget' || ref.id === 'offbudget';
+            const item = aggregate
+              ? null
+              : allAccounts.find(item => item.id === ref.id);
+            name = aggregate
+              ? ref.id === 'onbudget'
+                ? t('On Budget')
+                : t('Off Budget')
+              : (item?.name ?? '');
+            Icon = SvgLibrary;
+            run = () =>
+              handleNavigate(
+                aggregate ? `/accounts/${ref.id}` : `/accounts/${ref.id}`,
+              );
+          } else if (ref.type === 'dashboard') {
+            const item = dashboardPages.find(item => item.id === ref.id);
+            name = item?.name ?? '';
+            Icon = SvgReports;
+            run = item ? () => handleNavigate(`/reports/${ref.id}`) : undefined;
+          } else if (ref.type === 'report') {
+            const item = customReports.find(item => item.id === ref.id);
+            name = item?.name ?? '';
+            Icon = SvgNotesPaperText;
+            run = item
+              ? () => handleNavigate(`/reports/custom/${ref.id}`)
+              : undefined;
+          } else if (ref.type === 'quick-action') {
+            const item = quickActions.find(item => item.id === ref.id);
+            name = item?.name ?? '';
+            Icon = item?.Icon;
+            run = item
+              ? () => {
+                  if (ref.id === 'change-theme') {
+                    setPage('themes');
+                    setSearch('');
+                    setSelectedValue(`theme-builtin:${currentTheme}`);
+                    setAnimatePageChange(true);
+                    return;
+                  }
+                  if (!item.keepOpen) dispatch(closeCommandBar());
+                  return item.run();
+                }
+              : undefined;
+          } else {
+            const command = contributedCommands.find(
+              command =>
+                (command.ownerId ?? '') === ref.ownerId &&
+                (command.commandId ?? command.id) === ref.commandId &&
+                command.instanceId === ref.instanceId,
+            );
+            name = command?.label ?? '';
+            run = command
+              ? () => {
+                  dispatch(closeCommandBar());
+                  return command.execute();
+                }
+              : undefined;
+            destructive = command?.destructive ?? false;
+          }
+          if (!run || !name) return [];
+          return [
+            {
+              key: 'primary',
+              heading: t('Primary'),
+              items: [
+                {
+                  id: 'open',
+                  name,
+                  Icon,
+                  destructive,
+                  keepOpen:
+                    ref.type === 'quick-action' &&
+                    quickActions.find(item => item.id === ref.id)?.keepOpen,
+                  primaryAction: { label: name, run },
+                },
+              ],
+            },
+          ];
+        })();
+
+  const currentActionSections =
+    contextualItem != null ? contextualActionSections : genericActionSections;
+  const actionPageHeader: ActionPageHeader | null =
+    contextualHeader ??
+    (actionPageRef && genericActionSections.length
+      ? {
+          name: genericActionSections[0].items[0].name,
+          typeLabel: getRootSectionLabel(actionPageRef),
+          Icon: genericActionSections[0].items[0].Icon,
+        }
+      : null);
+  const actionFavoriteSections: readonly ActionSection[] =
+    actionPageRef == null || actionPageHeader == null
+      ? currentActionSections
+      : [
+          {
+            key: 'favorite',
+            heading: t('Favorite'),
+            items: [
+              {
+                id: 'favorite',
+                name: favoriteKeys.has(favoriteRefKey(actionPageRef))
+                  ? t('Remove from favorites')
+                  : t('Add to favorites'),
+                Icon: favoriteKeys.has(favoriteRefKey(actionPageRef))
+                  ? SvgRemoveAlternate
+                  : SvgBookmarkOutlineAdd,
+                primaryAction: {
+                  label: t('Favorite'),
+                  run: () => toggleFavorite(actionPageRef),
+                },
+              },
+            ],
+          },
+          ...currentActionSections,
+        ];
+
+  useEffect(() => {
+    if (
+      open &&
+      page === 'actions' &&
+      actionPageRef != null &&
+      genericActionSections.length === 0
+    ) {
+      goBackToRoot();
+    }
+  }, [actionPageRef, genericActionSections.length, goBackToRoot, open, page]);
 
   const searchLower = search.toLowerCase();
   const filteredSections = sections.map(section => ({
@@ -1108,10 +1395,24 @@ export function CommandBar() {
       item.name.toLowerCase().includes(searchLower),
     ),
   }));
-  const hasResults = filteredSections.some(section => !!section.items.length);
+  const filteredPageActionSection =
+    pageActionSection == null
+      ? null
+      : {
+          ...pageActionSection,
+          items: pageActionSection.items.filter(item =>
+            item.name.toLowerCase().includes(searchLower),
+          ),
+        };
+  const hasResults =
+    filteredSections.some(section => !!section.items.length) ||
+    (filteredPageActionSection?.items.length ?? 0) > 0;
   const hasRootResults =
     hasResults || recentSection != null || favoriteSection != null;
-  const isActionPage = page === 'account-actions' || page === 'report-actions';
+  const isActionPage =
+    page === 'account-actions' ||
+    page === 'report-actions' ||
+    page === 'actions';
   const commandListClassName = cx(
     css({
       flex: '1 1 auto',
@@ -1142,6 +1443,26 @@ export function CommandBar() {
       label={t('Command Bar')}
       aria-label={t('Command Bar')}
       shouldFilter={false}
+      onKeyDownCapture={event => {
+        if (event.key !== 'Enter') return;
+
+        const isLiteralCtrlEnter =
+          event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
+        const isModifiedEnter =
+          event.ctrlKey || event.metaKey || event.altKey || event.shiftKey;
+
+        if (page === 'root' && isModifiedEnter) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (isLiteralCtrlEnter) openSelectedContextualPage();
+          return;
+        }
+
+        if (isActionPage && isModifiedEnter) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
       overlayClassName={css({
         position: 'fixed',
         inset: 0,
@@ -1179,6 +1500,9 @@ export function CommandBar() {
           style={{
             flexDirection: 'row',
             alignItems: 'center',
+            flexWrap: 'nowrap',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
             gap: 10,
             flexShrink: 0,
             padding: '13px 15px',
@@ -1211,12 +1535,6 @@ export function CommandBar() {
             value={search}
             onValueChange={setSearch}
             onKeyDown={e => {
-              if (e.key === 'Enter' && e.ctrlKey && page === 'root') {
-                e.preventDefault();
-                e.stopPropagation();
-                openSelectedContextualPage();
-                return;
-              }
               if (e.key === 'Backspace' && search === '' && page === 'themes') {
                 e.preventDefault();
                 goBackToRoot();
@@ -1240,23 +1558,23 @@ export function CommandBar() {
         </View>
       )}
       {isActionPage ? (
-        contextualHeader != null && (
+        actionPageHeader != null && (
           <ActionPage
             key={page}
-            header={contextualHeader}
-            sections={contextualActionSections}
+            header={actionPageHeader}
+            sections={actionFavoriteSections}
             query={search}
             listClassName={commandListClassName}
             onQueryChange={query => {
               setSearch(query);
               const queryLower = query.trim().toLowerCase();
-              const firstVisibleAction = contextualActionSections
+              const firstVisibleAction = actionFavoriteSections
                 .flatMap(section => section.items)
                 .find(action => action.name.toLowerCase().includes(queryLower));
               setSelectedValue(
                 firstVisibleAction
                   ? `action:${
-                      contextualActionSections.find(section =>
+                      actionFavoriteSections.find(section =>
                         section.items.includes(firstVisibleAction),
                       )?.key
                     }:${firstVisibleAction.id}`
@@ -1265,8 +1583,8 @@ export function CommandBar() {
             }}
             onSelectAction={runContextualAction}
             onBack={goBackToRoot}
-            primaryShortcutHint={{ keys: ['↵'], label: t('select') }}
-            secondaryShortcutHint={{ keys: ['esc'], label: t('back') }}
+            primaryShortcutHint={{ keys: ['↵'], label: t('Open') }}
+            backShortcutHint={{ keys: ['esc'], label: t('back') }}
           />
         )
       ) : (
@@ -1320,19 +1638,63 @@ export function CommandBar() {
                   )}
                 </Command.Group>
               )}
+              {filteredPageActionSection != null &&
+                filteredPageActionSection.items.length > 0 && (
+                  <Command.Group
+                    heading={filteredPageActionSection.heading}
+                    className={paletteGroupClassName}
+                  >
+                    {filteredPageActionSection.items.map(
+                      ({ id, name, Icon, content, leading, destructive }) => (
+                        <Command.Item
+                          key={id}
+                          onSelect={() =>
+                            filteredPageActionSection.onSelect({ id })
+                          }
+                          value={`page-actions:${id}`}
+                          aria-label={name}
+                          className={
+                            destructive
+                              ? `${actionItemClassName} ${destructiveActionClassName}`
+                              : paletteItemClassName
+                          }
+                        >
+                          {leading ?? (Icon && <Icon width={15} height={15} />)}
+                          {content || (
+                            <Text
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              <Highlight text={name} query={search} />
+                            </Text>
+                          )}
+                        </Command.Item>
+                      ),
+                    )}
+                  </Command.Group>
+                )}
               {favoriteSection != null && (
                 <Command.Group
                   heading={favoriteSection.heading}
                   className={paletteGroupClassName}
                 >
                   {favoriteSection.items.map(
-                    ({ id, name, Icon, content, leading }) => (
+                    ({ id, name, Icon, content, leading, destructive }) => (
                       <Command.Item
                         key={id}
                         onSelect={() => favoriteSection.onSelect({ id })}
                         value={`favorites:${id}`}
                         aria-label={name}
-                        className={paletteItemClassName}
+                        className={
+                          destructive
+                            ? `${actionItemClassName} ${destructiveActionClassName}`
+                            : paletteItemClassName
+                        }
                       >
                         {leading ?? (Icon && <Icon width={15} height={15} />)}
                         {content || (
@@ -1362,17 +1724,13 @@ export function CommandBar() {
                       className={paletteGroupClassName}
                     >
                       {section.items.map(
-                        ({ id, name, Icon, content, leading, destructive }) => (
+                        ({ id, name, Icon, content, leading }) => (
                           <Command.Item
                             key={id}
                             onSelect={() => section.onSelect({ id })}
                             value={`${section.key}:${id}`}
                             aria-label={name}
-                            className={
-                              destructive
-                                ? `${actionItemClassName} ${destructiveActionClassName}`
-                                : paletteItemClassName
-                            }
+                            className={paletteItemClassName}
                           >
                             {leading ??
                               (Icon && <Icon width={15} height={15} />)}
@@ -1419,6 +1777,12 @@ export function CommandBar() {
             alignItems: 'center',
             gap: 14,
             flexShrink: 0,
+            minWidth: 0,
+            boxSizing: 'border-box',
+            flexWrap: 'nowrap',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            lineHeight: '16px',
             padding: '9px 15px',
             borderTop: '1px solid var(--color-tableBorder)',
             backgroundColor: 'var(--color-pillBackgroundLight)',
@@ -1426,6 +1790,12 @@ export function CommandBar() {
         >
           <FooterHint keys={['↑', '↓']}>{t('navigate')}</FooterHint>
           <FooterHint keys={['↵']}>{t('select')}</FooterHint>
+          {page === 'root' && selectedRootRef != null && (
+            <ShortcutHint
+              keys={['Ctrl', '↵']}
+              label={<Trans>Open actions</Trans>}
+            />
+          )}
           <FooterHint keys={['esc']}>
             {page === 'root' ? t('close') : t('back')}
           </FooterHint>

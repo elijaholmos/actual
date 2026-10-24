@@ -248,9 +248,7 @@ test.describe('Command bar', () => {
       commandBar.getByPlaceholder('Search actions...'),
     ).toBeVisible();
 
-    await commandBar
-      .getByRole('option', { name: 'Add to favorites' })
-      .click();
+    await commandBar.getByRole('option', { name: 'Add to favorites' }).click();
     await expect(
       commandBar.getByRole('option', { name: 'Remove from favorites' }),
     ).toBeVisible();
@@ -275,9 +273,7 @@ test.describe('Command bar', () => {
     const { commandBar, search } = await searchForDemoAccount(page);
 
     await search.press('Control+Enter');
-    await commandBar
-      .getByRole('option', { name: 'Add to favorites' })
-      .click();
+    await commandBar.getByRole('option', { name: 'Add to favorites' }).click();
     await expect(
       commandBar.getByRole('option', { name: 'Remove from favorites' }),
     ).toBeVisible();
@@ -345,8 +341,7 @@ test.describe('Command bar', () => {
   });
 
   test('opens a dashboard action page with literal Ctrl+Enter', async () => {
-    const { commandBar, commandBarInput } =
-      await openMainDashboardActionPage();
+    const { commandBar, commandBarInput } = await openMainDashboardActionPage();
 
     await commandBarInput.press('Control+Enter');
 
@@ -359,17 +354,16 @@ test.describe('Command bar', () => {
     await expect(commandBar.getByRole('heading', { level: 2 })).toContainText(
       'Reports',
     );
-    await expect(commandBar.getByRole('option', { name: 'Main' })).toBeVisible();
+    await expect(
+      commandBar.getByRole('option', { name: 'Main' }),
+    ).toBeVisible();
   });
 
   test('favorites a dashboard action and shows it in the root palette', async () => {
-    const { commandBar, commandBarInput } =
-      await openMainDashboardActionPage();
+    const { commandBar, commandBarInput } = await openMainDashboardActionPage();
 
     await commandBarInput.press('Control+Enter');
-    await commandBar
-      .getByRole('option', { name: 'Add to favorites' })
-      .click();
+    await commandBar.getByRole('option', { name: 'Add to favorites' }).click();
     await expect(
       commandBar.getByRole('option', { name: 'Remove from favorites' }),
     ).toBeVisible();
@@ -385,28 +379,24 @@ test.describe('Command bar', () => {
 
     const favorites = commandBar.getByRole('group', { name: 'Favorites' });
     await expect(favorites).toBeVisible();
-    await expect(
-      favorites.getByRole('option', { name: 'Main' }),
-    ).toBeVisible();
+    await expect(favorites.getByRole('option', { name: 'Main' })).toBeVisible();
   });
 
   test('matches the dashboard action page across themes', async () => {
-    const { commandBar, commandBarInput } =
-      await openMainDashboardActionPage();
+    const { commandBar, commandBarInput } = await openMainDashboardActionPage();
 
     await commandBarInput.press('Control+Enter');
-    await expect(commandBar.getByRole('option', { name: 'Main' })).toBeVisible();
+    await expect(
+      commandBar.getByRole('option', { name: 'Main' }),
+    ).toBeVisible();
     await expect(commandBar.locator('[cmdk-root]')).toMatchThemeScreenshots();
   });
 
   test('matches the in-place dashboard Remove-favorite state across themes', async () => {
-    const { commandBar, commandBarInput } =
-      await openMainDashboardActionPage();
+    const { commandBar, commandBarInput } = await openMainDashboardActionPage();
 
     await commandBarInput.press('Control+Enter');
-    await commandBar
-      .getByRole('option', { name: 'Add to favorites' })
-      .click();
+    await commandBar.getByRole('option', { name: 'Add to favorites' }).click();
     await expect(
       commandBar.getByRole('option', { name: 'Remove from favorites' }),
     ).toBeVisible();

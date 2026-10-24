@@ -23,6 +23,7 @@ export type CommandBarRecentNavigationId =
   | 'rules'
   | 'tags'
   | 'bank-sync'
+  | 'reports-nav'
   | 'settings'
   | 'accounts';
 
@@ -44,6 +45,7 @@ const recentNavigationRoutes: readonly Readonly<{
   path: string;
 }>[] = [
   { id: 'budget', path: '/budget' },
+  { id: 'reports-nav', path: '/reports' },
   { id: 'schedules', path: '/schedules' },
   { id: 'payees', path: '/payees' },
   { id: 'payees', path: '/settings/payees' },

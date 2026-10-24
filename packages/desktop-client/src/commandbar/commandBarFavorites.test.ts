@@ -1,33 +1,43 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  COMMAND_BAR_FAVORITES_VERSION,
+  favoriteRefKey,
   parseCommandBarFavorites,
+  updateCommandBarFavorites,
 } from './commandBarFavorites';
 
-describe('parseCommandBarFavorites', () => {
-  it('collapses duplicate persisted references while preserving order', () => {
-    expect(
-      parseCommandBarFavorites({
-        version: COMMAND_BAR_FAVORITES_VERSION,
-        favorites: [
-          { type: 'account', id: 'checking' },
-          { type: 'report', id: 'monthly' },
-          { type: 'account', id: 'checking' },
-        ],
-      }),
-    ).toEqual([
-      { type: 'account', id: 'checking' },
-      { type: 'report', id: 'monthly' },
+describe('command bar favorites', () => {
+  it('migrates legacy domain favorites while preserving order and duplicates', () => {
+    const favorites = parseCommandBarFavorites({
+      version: 1,
+      favorites: [
+        { type: 'account', id: 'a' },
+        { type: 'report', id: 'r' },
+        { type: 'account', id: 'a' },
+      ],
+    });
+
+    expect(favorites).toEqual([
+      { type: 'account', id: 'a' },
+      { type: 'report', id: 'r' },
     ]);
   });
 
-  it('returns no favorites for an unsupported version', () => {
+  it('does not collide when owner and command ids contain delimiters', () => {
+    const first = {
+      type: 'page-action' as const,
+      ownerId: 'a:b',
+      commandId: 'c',
+    };
+    const second = {
+      type: 'page-action' as const,
+      ownerId: 'a',
+      commandId: 'b:c',
+    };
+    expect(favoriteRefKey(first)).not.toBe(favoriteRefKey(second));
     expect(
-      parseCommandBarFavorites({
-        version: COMMAND_BAR_FAVORITES_VERSION + 1,
-        favorites: [{ type: 'account', id: 'checking' }],
-      }),
-    ).toEqual([]);
+      updateCommandBarFavorites({ version: 2, favorites: [first] }, [], second)
+        .favorites,
+    ).toEqual([first, second]);
   });
 });

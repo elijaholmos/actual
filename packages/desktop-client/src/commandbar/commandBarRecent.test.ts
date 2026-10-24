@@ -5,6 +5,7 @@ import { getCommandBarRecentRef } from './commandBarRecent';
 const catalog = {
   navigation: [
     { id: 'budget', path: '/budget' },
+    { id: 'reports-nav', path: '/reports' },
     { id: 'bank-sync', path: '/settings/bank-sync' },
     { id: 'payees', path: '/settings/payees' },
   ],
@@ -20,6 +21,13 @@ describe('getCommandBarRecentRef', () => {
       id: 'bank-sync',
     });
     expect(getCommandBarRecentRef('/settings/rules', catalog)).toBeNull();
+  });
+
+  it('resolves Reports through the stable sidebar alias', () => {
+    expect(getCommandBarRecentRef('/reports', catalog)).toEqual({
+      type: 'navigation',
+      id: 'reports-nav',
+    });
   });
 
   it('removes unavailable live navigation destinations', () => {

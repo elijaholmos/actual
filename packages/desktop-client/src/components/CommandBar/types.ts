@@ -10,10 +10,8 @@ export type SearchableItem = Readonly<{
    *
    * Meant for complex items that want to display more than just static text.
    */
-  content?: ReactNode;
-  Icon?:
-    | ComponentType<SVGProps<SVGElement>>
-    | ComponentType<SVGProps<SVGSVGElement>>;
+  readonly content?: ReactNode;
+  readonly Icon?: ComponentType<SVGProps<SVGSVGElement>>;
   /** Custom leading element; takes precedence over {@link SearchableItem.Icon `Icon`} */
   readonly leading?: ReactNode;
   readonly destructive?: boolean;
@@ -34,13 +32,16 @@ export type QuickAction = SearchableItem &
     readonly keepOpen?: boolean;
   }>;
 
-/** An action shown for a resolved item on a nested action page. */
 export type ActionItem = SearchableItem &
   Readonly<{
     readonly description?: ReactNode;
     readonly shortcut?: readonly string[];
     readonly destructive?: boolean;
-    readonly run: () => void | Promise<void>;
+    readonly keepOpen?: boolean;
+    readonly primaryAction: Readonly<{
+      label: string;
+      run: () => void | Promise<void>;
+    }>;
   }>;
 
 export type ActionSection = Readonly<{
@@ -55,6 +56,14 @@ export type ActionPageHeader = Readonly<{
   readonly Icon?: ComponentType<SVGProps<SVGSVGElement>>;
   readonly leading?: ReactNode;
   readonly secondary?: ReactNode;
+  readonly favorite?: FavoriteControl;
+}>;
+
+export type FavoriteControl = Readonly<{
+  readonly isPressed: boolean;
+  readonly onToggle: () => void;
+  readonly addLabel?: string;
+  readonly removeLabel?: string;
 }>;
 
 export type ShortcutHint = Readonly<{
