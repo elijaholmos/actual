@@ -3,6 +3,36 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { ConfigurationPage } from './page-models/configuration-page';
 
+const demoAccountName = 'Ally Savings';
+
+async function openCommandBar(page: Page) {
+  await page.keyboard.press('ControlOrMeta+k');
+
+  const commandBar = page.getByRole('dialog', {
+    name: 'Command Bar',
+  });
+  await expect(
+    commandBar.getByRole('combobox', { name: 'Command Bar' }),
+  ).toBeVisible();
+
+  return commandBar;
+}
+
+async function searchForDemoAccount(page: Page) {
+  const commandBar = await openCommandBar(page);
+  const search = commandBar.getByRole('combobox', {
+    name: 'Command Bar',
+  });
+
+  await search.fill(demoAccountName);
+  const account = commandBar.getByRole('option', {
+    name: demoAccountName,
+  });
+  await expect(account).toBeVisible();
+
+  return { commandBar, search, account };
+}
+
 test.describe('Command bar', () => {
   let page: Page;
   let configurationPage: ConfigurationPage;
@@ -96,5 +126,51 @@ test.describe('Command bar', () => {
 
     await expect(palette).toBeVisible();
     await expect(palette).toMatchThemeScreenshots();
+  });
+
+  test('uses plain Enter for direct account navigation', async () => {
+    const { search } = await searchForDemoAccount(page);
+
+    await search.press('Enter');
+
+    await expect(page).toHaveURL(/\/accounts\/[^/]+$/);
+    await expect(page.getByTestId('account-name')).toHaveText(demoAccountName);
+  });
+
+  test('opens an account action page with literal Ctrl+Enter', async () => {
+    const { commandBar, search } = await searchForDemoAccount(page);
+
+    await search.press('Control+Enter');
+
+    await expect(
+      commandBar.getByPlaceholder('Search actions...'),
+    ).toBeVisible();
+    await expect(commandBar.getByRole('heading', { level: 2 })).toContainText(
+      demoAccountName,
+    );
+    await expect(commandBar.getByRole('heading', { level: 2 })).toContainText(
+      'Account',
+    );
+    await expect(
+      commandBar.getByRole('option', { name: 'Open' }),
+    ).toBeVisible();
+
+    const backButton = commandBar.getByRole('button', { name: 'Back' });
+    await expect(backButton).toBeVisible();
+    await backButton.click();
+    await expect(
+      commandBar.getByRole('combobox', { name: 'Command Bar' }),
+    ).toHaveValue(demoAccountName);
+  });
+
+  test('matches the account action page across themes', async () => {
+    const { commandBar, search } = await searchForDemoAccount(page);
+
+    await search.press('Control+Enter');
+    const actionPanel = commandBar.locator('[cmdk-root]');
+
+    await expect(commandBar.getByRole('button', { name: 'Back' })).toBeVisible();
+    await expect(actionPanel).toBeVisible();
+    await expect(actionPanel).toMatchThemeScreenshots();
   });
 });
