@@ -33,6 +33,15 @@ async function searchForDemoAccount(page: Page) {
   return { commandBar, search, account };
 }
 
+async function openDemoAccountPage(page: Page) {
+  await page
+    .getByRole('link', { name: new RegExp(`^${demoAccountName}`) })
+    .click();
+  await expect(page).toHaveURL(/\/accounts\/[^/]+$/);
+  await expect(page.getByTestId('account-name')).toHaveText(demoAccountName);
+  await expect(page.getByTestId('transaction-table')).toBeVisible();
+}
+
 test.describe('Command bar', () => {
   let page: Page;
   let configurationPage: ConfigurationPage;
@@ -169,7 +178,51 @@ test.describe('Command bar', () => {
     await search.press('Control+Enter');
     const actionPanel = commandBar.locator('[cmdk-root]');
 
-    await expect(commandBar.getByRole('button', { name: 'Back' })).toBeVisible();
+    await expect(
+      commandBar.getByRole('button', { name: 'Back' }),
+    ).toBeVisible();
+    await expect(actionPanel).toBeVisible();
+    await expect(actionPanel).toMatchThemeScreenshots();
+  });
+
+  test('shows active account Page actions and opens the filter picker', async () => {
+    await openDemoAccountPage(page);
+    const commandBar = await openCommandBar(page);
+    const pageActions = commandBar.getByRole('group', {
+      name: 'Page actions',
+    });
+
+    await expect(pageActions.getByRole('option')).toHaveText([
+      'Add New',
+      'Import',
+      'Filter',
+      'Collapse split transactions',
+      'Show balance chart',
+      'Manage table columns',
+      'Hide reconciled transactions',
+      'Export',
+      'Close account',
+    ]);
+
+    await pageActions.getByRole('option', { name: 'Filter' }).click();
+    await expect(page.getByTestId('filters-select-tooltip')).toBeVisible();
+  });
+
+  test('matches active account Page actions across themes', async () => {
+    await openDemoAccountPage(page);
+    const commandBar = await openCommandBar(page);
+    const search = commandBar.getByRole('combobox', {
+      name: 'Command Bar',
+    });
+
+    await search.fill('Close account');
+    await expect(
+      commandBar
+        .getByRole('group', { name: 'Page actions' })
+        .getByRole('option', { name: 'Close account' }),
+    ).toBeVisible();
+
+    const actionPanel = commandBar.locator('[cmdk-root]');
     await expect(actionPanel).toBeVisible();
     await expect(actionPanel).toMatchThemeScreenshots();
   });
