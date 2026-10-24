@@ -42,6 +42,19 @@ async function openDemoAccountPage(page: Page) {
   await expect(page.getByTestId('transaction-table')).toBeVisible();
 }
 
+async function visitRecentDestinations(page: Page) {
+  await openDemoAccountPage(page);
+
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+
+  await page.getByRole('link', { name: 'Schedules', exact: true }).click();
+  await expect(page).toHaveURL(/\/schedules$/);
+  await expect(
+    page.getByRole('button', { name: 'Add new schedule' }),
+  ).toBeVisible();
+}
+
 test.describe('Command bar', () => {
   let page: Page;
   let configurationPage: ConfigurationPage;
@@ -272,5 +285,36 @@ test.describe('Command bar', () => {
     const actionPanel = commandBar.locator('[cmdk-root]');
     await expect(actionPanel).toBeVisible();
     await expect(actionPanel).toMatchThemeScreenshots();
+  });
+
+  test('tracks Recent destinations in order and selects one with Enter', async () => {
+    await visitRecentDestinations(page);
+    const commandBar = await openCommandBar(page);
+    const recent = commandBar.getByRole('group', { name: 'Recent' });
+
+    await expect(recent.getByRole('option')).toHaveText([
+      'Settings',
+      demoAccountName,
+      'Budget',
+    ]);
+    await expect(
+      recent.getByRole('option', { name: 'Schedules' }),
+    ).not.toBeVisible();
+
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/settings$/);
+  });
+
+  test('matches the root Recent group across themes', async () => {
+    await visitRecentDestinations(page);
+    const commandBar = await openCommandBar(page);
+    const recent = commandBar.getByRole('group', { name: 'Recent' });
+
+    await expect(recent.getByRole('option')).toHaveText([
+      'Settings',
+      demoAccountName,
+      'Budget',
+    ]);
+    await expect(recent).toMatchThemeScreenshots();
   });
 });
